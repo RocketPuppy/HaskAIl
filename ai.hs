@@ -80,11 +80,12 @@ makeEdges ws = [Edge (Node x, Node y) | (x:y:[]) <- combos]
 addEdges :: [Edge] -> IO ()
 addEdges es =
     do  conn <- connect
-        let str = foldl1 ((++) . (flip (++)) " OR ") ["node_values.name=? OR node_values.name=?" | e <- es]
-        query' <- prepare conn $ "SELECT nodes.id FROM nodes LEFT JOIN node_values ON nodes.node_value=node_values.id WHERE " ++ str
+        let whereClause = foldl1 ((++) . (flip (++)) " OR ") ["n1.name=? AND n2.name=?" | e <- es]
+        let subQuery = "SELECT n1.id, n2.id FROM (nodes LEFT JOIN node_values ON nodes.node_value=node_values.id) AS n1 CROSS JOIN (nodes LEFT JOIN node_values ON nodes.node_value=node_values.id) AS n2 WHERE " ++ whereClause
+        query' <- prepare conn subQuery
         execute query' $ concat [[toSql n1, toSql n2] | (Edge (n1, n2)) <- es]
         ids <- fetchAllRows query'
-        query <- prepare conn "INSERT INTO edges (n1, n2) VALUES(?, ?)"
+        query <- prepare conn $ "INSERT OR IGNORE INTO edges (n1, n2) VALUES(?, ?)"
         executeMany query ids
         commit conn
         disconnect conn
