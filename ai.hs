@@ -34,17 +34,21 @@ unNode (Node x) = x
 newtype Edge = Edge (Node, Node) deriving Show
 unEdge (Edge x) = x
 
+type Words = [Word]
+type Nodes = [Node]
+type Edges = [Edge]
+
 -- Receive Sentence
 -- Given a sentence output a response
 receiveInput :: String -> String
 receiveInput = joinSentence . splitSentence
 
 -- Split Sentence
-splitSentence :: String -> [Word]
+splitSentence :: String -> Words
 splitSentence = map Word . words
 
 -- Join Sentence
-joinSentence :: [Word] -> String
+joinSentence :: Words -> String
 joinSentence = unwords . map unWord
 
 -- Database functions
@@ -57,7 +61,7 @@ connect = do
     return conn
 
 -- Add new words to DB
-addWords :: [Word] -> IO ()
+addWords :: Words -> IO ()
 addWords ws =
     do  conn <- connect
         query <- prepare conn "INSERT INTO node_values (name) VALUES(?)"
@@ -72,12 +76,12 @@ addWords ws =
         disconnect conn
 
 -- Make the edges out of words
-makeEdges :: [Word] -> [Edge]
+makeEdges :: Words -> Edges
 makeEdges ws = [Edge (Node x, Node y) | (x:y:[]) <- combos]
     where combos = tail $ scanl1 ((++) . return . last) $ map return ws
 
 -- Add new edges to DB
-addEdges :: [Edge] -> IO ()
+addEdges :: Edges -> IO ()
 addEdges es =
     do  conn <- connect
         let whereClause = foldl1 ((++) . (flip (++)) " OR ") ["n1.name=? AND n2.name=?" | e <- es]
@@ -90,11 +94,16 @@ addEdges es =
         commit conn
         disconnect conn
 
-
--- Increment duplicated edges
-incEdges :: [Edge] -> IO ()
-incEdges = undefined
+getEdges :: Node -> Edges
 
 -- Find shortest path between TOP and BOTTOM that includes all words in received sentence
-findShortestPath :: [Word] -> [Word]
+-- A* is used to find shortest path
+-- before we start we need to find the maximum weight and set w_max = max(weight) + 1
+-- while doing the search, treat weights as if they are (w_max - weight)
+-- Heuristic: h(.) = (w_max * count(edges)) - distance_travelled
+-- w_max * count(edges) = distance_possible
+findShortestPath :: Words -> Words
 findShortestPath = undefined
+
+findShortestPath' :: Node -> Node -> Nodes
+findShortestPath' n1 n2 = 
