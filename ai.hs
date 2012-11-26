@@ -1,11 +1,12 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-module PupBot_AI (receiveInput) where
+module Main (main) where
 
 import Data.Convertible.Base
+import Data.List
 import Database.HDBC
 import Database.HDBC.Sqlite3
 
-newtype Word = Word String deriving Show
+newtype Word = Word String deriving (Show, Eq)
 instance Convertible Word SqlValue where
     safeConvert = Right . SqlString . unWord
 instance Convertible SqlValue Word where
@@ -18,7 +19,7 @@ instance Convertible SqlValue Word where
             , convErrorMessage= "Unable to convert unknown SqlType to Word"
             }
 unWord (Word x) = x
-newtype Node = Node Word deriving Show
+newtype Node = Node Word deriving (Show, Eq)
 instance Convertible Node SqlValue where
     safeConvert = Right . SqlString . unWord . unNode
 instance Convertible SqlValue Node where
@@ -37,6 +38,13 @@ unEdge (Edge x) = x
 type Words = [Word]
 type Nodes = [Node]
 type Edges = [Edge]
+
+main =
+    do  inp <- getLine
+        let words = splitSentence inp
+        let edges = makeEdges words
+        addWords words
+        addEdges edges
 
 -- Receive Sentence
 -- Given a sentence output a response
@@ -66,7 +74,8 @@ addWords ws =
     do  conn <- connect
         query <- prepare conn "INSERT INTO node_values (name) VALUES(?)"
         executeMany query [[toSql w] | w <- ws]
-        let str = foldl1 ((++) . (flip (++)) " OR ") ["name=?" | w <- ws]
+        let str = concat $ intersperse " OR " ["name=?" | w <- ws]
+        -- let str = foldl1 ((++) . (flip (++)) " OR ") ["name=?" | w <- ws]
         query'' <- prepare conn $ "SELECT id FROM node_values WHERE " ++ str
         execute query'' (map toSql ws)
         ids <- fetchAllRows query''
@@ -84,7 +93,8 @@ makeEdges ws = [Edge (Node x, Node y) | (x:y:[]) <- combos]
 addEdges :: Edges -> IO ()
 addEdges es =
     do  conn <- connect
-        let whereClause = foldl1 ((++) . (flip (++)) " OR ") ["n1.name=? AND n2.name=?" | e <- es]
+        let whereClause= concat $ intersperse " OR " ["n1.name=? AND n2.name=?" | e <- es]
+        -- let whereClause = foldl1 ((++) . (flip (++)) " OR ") ["n1.name=? AND n2.name=?" | e <- es]
         let subQuery = "SELECT n1.id, n2.id FROM (nodes LEFT JOIN node_values ON nodes.node_value=node_values.id) AS n1 CROSS JOIN (nodes LEFT JOIN node_values ON nodes.node_value=node_values.id) AS n2 WHERE " ++ whereClause
         query' <- prepare conn subQuery
         execute query' $ concat [[toSql n1, toSql n2] | (Edge (n1, n2)) <- es]
@@ -107,3 +117,25 @@ findShortestPath = undefined
 
 findShortestPath' :: Node -> Node -> Nodes
 findShortestPath' n1 n2 = 
+
+-- our graph structure
+data Graph a = GNode a [Graph] deriving (Show)
+
+findShortestPath'' :: Node -> [Node] -> [Node] -> [Node]
+findShortestPath'' to (from:open) closed
+    | from == to = -- finish
+    | open == [] = -- failure
+    | 
+    -- keep searching, add the neighbors of from to the openset and add from to the closed set
+    | otherwise = findShortestPath'' to (neighbors from ++ open) (from:closed)
+
+findShortestPath' :: Node -> Node -> [Node]
+findShortestPath' from to =
+    | (unWord . unNode from) == (unWord . unNode to) = --finish
+    | otherwise =
+        do  conn <- connect
+            -- fetch all the nodes connected to the from node
+            query <- prepare conn "SELECT n2 FROM edges LEFT JOIN nodes ON edges.n1=nodes.id LEFT JOIN node_values ON nodes.node_value=node_values.id WHERE node_values.name=?"
+            execute query $ toSql from
+            nodes <- fetchAllRows query --fetch the nodes
+            map (flip findShortestPath' to) nodes
